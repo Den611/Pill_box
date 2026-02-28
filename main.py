@@ -49,23 +49,31 @@ async def log_from_esp(user_id: str, event: str):
 
     # 1. Записуємо в історію
     execute_db("INSERT INTO Logs (user_id, event, time) VALUES (?, ?, ?)", (user_id, event, time_str))
+    print(f"\n[{time_str}] 📥 Отримано сигнал від ESP32: {event}")
 
     # 2. Шукаємо родичів цього пацієнта
     relatives = execute_db("SELECT relative_id FROM Relatives WHERE patient_id = ?", (user_id,), fetchall=True)
+    print(f"👥 Знайдено родичів у базі: {relatives}")
 
     # 3. Відправляємо сповіщення родичам
     if event == "taken":
         for rel in relatives:
             try:
                 await bot.send_message(rel[0], f"✅ Пацієнт прийняв ліки о {time_str}. Все добре.")
-            except:
-                pass
+                print(f"🟢 Успішно відправлено повідомлення 'взято' родичу ID: {rel[0]}")
+            except Exception as e:
+                print(f"❌ ПОМИЛКА відправки родичу {rel[0]}: {e}")
+
     elif event == "remind":
         for rel in relatives:
             try:
                 await bot.send_message(rel[0], f"🚨 ТРИВОГА! Пацієнт ігнорує прийом ліків!")
-            except:
-                pass
+                print(f"🔴 Успішно відправлено ТРИВОГУ родичу ID: {rel[0]}")
+            except Exception as e:
+                print(f"❌ ПОМИЛКА відправки тривоги родичу {rel[0]}: {e}")
+
+    elif event == "open":
+        print("🔓 Кришку відкрито. Родичам поки нічого не пишемо (чекаємо дії).")
 
     return {"status": "success"}
 
@@ -87,6 +95,7 @@ async def cmd_start(message: types.Message):
         p_id = args[1].split("_")[1]
         execute_db("INSERT OR IGNORE INTO Relatives (relative_id, patient_id) VALUES (?, ?)",
                    (str(message.chat.id), p_id))
+        print(f"\n🔗 НОВИЙ РОДИЧ! ID {message.chat.id} підписався на пацієнта {p_id}")
         return await message.answer(f"✅ Ви підключені як родич до пацієнта!\nВи будете отримувати тривоги.",
                                     reply_markup=main_kb())
 
@@ -102,7 +111,7 @@ async def show_history(message: types.Message):
         return await message.answer("📭 Історія порожня.")
 
     names = {"open": "🔓 Кришку відкрито", "taken": "✅ ПРИЙНЯТО", "remind": "⚠️ Пропущено (Нагадування)"}
-    text = "📋 Останні події:\n\n"
+    text = "📋 **Останні події:**\n\n"
     for log in logs:
         text += f"🔹 {log[1]} — {names.get(log[0], log[0])}\n"
     await message.answer(text)
