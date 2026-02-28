@@ -214,6 +214,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+@app.get("/")
+def read_root():
+    return {"message": "Сервер розумної аптечки працює і готовий до роботи! 💊"}
+
 @app.get("/api/time")
 def get_current_time():
     # Отримуємо поточний час
