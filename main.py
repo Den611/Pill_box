@@ -205,7 +205,9 @@ def read_root():
 
 @app.get("/api/state/{user_id}")
 def get_state(user_id: int):
-    return get_user_esp_state(user_id)
+    state = get_user_esp_state(user_id).copy() # Робимо копію стану
+    state["time"] = datetime.now().strftime("%H:%M") # Додаємо поточний час (напр. "14:30")
+    return state
 
 @app.get("/api/taken/{user_id}/{slot}")
 async def pill_taken(user_id: int, slot: int):
