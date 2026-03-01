@@ -1,22 +1,39 @@
 {
   "version": 1,
-  "author": "Anonymous",
+  "author": "Denys",
   "editor": "wokwi",
   "parts": [
-    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
-    { "type": "wokwi-hc-sr04", "id": "ultrasonic", "top": -120, "left": 150, "attrs": {} },
-    { "type": "wokwi-servo", "id": "servo", "top": 120, "left": 150, "attrs": {} },
-    { "type": "wokwi-buzzer", "id": "buzzer", "top": -80, "left": -150, "attrs": {} }
+    { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 100, "left": 0, "attrs": {} },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd1",
+      "top": -99.2,
+      "left": -138.4,
+      "attrs": { "pins": "i2c" }
+    },
+    { "type": "wokwi-hc-sr04", "id": "ultrasonic", "top": -27.3, "left": 216.7, "attrs": {} },
+    { "type": "wokwi-servo", "id": "servo", "top": 257.2, "left": 153.6, "attrs": {} },
+    { "type": "wokwi-buzzer", "id": "bz1", "top": 50, "left": -150, "attrs": {} }
   ],
   "connections": [
-    [ "esp:3V3", "ultrasonic:VCC", "red", [ "v0" ] ],
-    [ "esp:GND.1", "ultrasonic:GND", "black", [ "v0" ] ],
-    [ "esp:14", "ultrasonic:TRIG", "green", [ "v0" ] ],
-    [ "esp:16", "ultrasonic:ECHO", "blue", [ "v0" ] ],
-    [ "esp:3V3", "servo:V+", "red", [ "v0" ] ],
-    [ "esp:GND.2", "servo:GND", "black", [ "v0" ] ],
-    [ "esp:18", "servo:PWM", "orange", [ "v0" ] ],
-    [ "esp:13", "buzzer:PIN", "purple", [ "v0" ] ],
-    [ "esp:GND.3", "buzzer:GND", "black", [ "v0" ] ]
-  ]
+    [ "esp:GND.1", "lcd1:GND", "black", [ "v0" ] ],
+    [ "esp:VIN", "lcd1:VCC", "red", [ "v0" ] ],
+    [ "esp:21", "lcd1:SDA", "green", [ "v0" ] ],
+    [ "esp:22", "lcd1:SCL", "blue", [ "v0" ] ],
+    [ "esp:GND.2", "ultrasonic:GND", "black", [ "v0" ] ],
+    [ "esp:VIN", "ultrasonic:VCC", "red", [ "v0" ] ],
+    [ "esp:14", "ultrasonic:TRIG", "orange", [ "v0" ] ],
+    [ "esp:16", "ultrasonic:ECHO", "purple", [ "v0" ] ],
+    [ "esp:GND.3", "servo:GND", "black", [ "v0" ] ],
+    [ "esp:VIN", "servo:VCC", "red", [ "v0" ] ],
+    [ "esp:18", "servo:PWM", "yellow", [ "v0" ] ],
+    [ "esp:13", "bz1:2", "grey", [ "v0" ] ],
+    [ "esp:GND.1", "bz1:1", "black", [ "v0" ] ],
+    [ "servo:PWM", "esp:D18", "green", [ "h0" ] ],
+    [ "servo:GND", "esp:GND.1", "black", [ "h0" ] ],
+    [ "servo:V+", "esp:VIN", "green", [ "h0" ] ],
+    [ "lcd1:SDA", "esp:D21", "green", [ "h0" ] ],
+    [ "lcd1:SCL", "esp:D22", "green", [ "h0" ] ]
+  ],
+  "dependencies": {}
 }
