@@ -8,13 +8,10 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-# ---------- НАЛАШТУВАННЯ ----------
 BOT_TOKEN = "8622592417:AAFx0RFEPlAtydcD8hQYtkrxzGfL6X0I1Vs"
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-
-# ---------- РОБОТА З БД (SQLite) ----------
 def execute_db(query, params=(), fetchone=False, fetchall=False):
     conn = sqlite3.connect("pillbox.db")
     cursor = conn.cursor()
@@ -24,105 +21,74 @@ def execute_db(query, params=(), fetchone=False, fetchall=False):
     conn.close()
     return res
 
-
 def init_db():
-    execute_db('''CREATE TABLE IF NOT EXISTS Logs 
-                  (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, event TEXT, time TEXT)''')
-    execute_db('''CREATE TABLE IF NOT EXISTS Relatives 
-                  (id INTEGER PRIMARY KEY AUTOINCREMENT, relative_id TEXT, patient_id TEXT, UNIQUE(relative_id, patient_id))''')
+    execute_db('''CREATE TABLE IF NOT EXISTS Logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, event TEXT, time TEXT)''')
+    execute_db('''CREATE TABLE IF NOT EXISTS Relatives (id INTEGER PRIMARY KEY AUTOINCREMENT, relative_id TEXT, patient_id TEXT, UNIQUE(relative_id, patient_id))''')
 
-
-# ---------- FastAPI (СЕРВЕР ДЛЯ ESP32) ----------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    asyncio.create_task(dp.start_polling(bot))  # Запускаємо Телеграм бота
+    asyncio.create_task(dp.start_polling(bot))
     yield
 
-
 app = FastAPI(lifespan=lifespan)
-
 
 @app.get("/api/log")
 async def log_from_esp(user_id: str, event: str):
     time_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-
-    # 1. Записуємо в історію
     execute_db("INSERT INTO Logs (user_id, event, time) VALUES (?, ?, ?)", (user_id, event, time_str))
     print(f"\n[{time_str}] 📥 Отримано сигнал від ESP32: {event}")
 
-    # 2. Шукаємо родичів цього пацієнта
     relatives = execute_db("SELECT relative_id FROM Relatives WHERE patient_id = ?", (user_id,), fetchall=True)
-    print(f"👥 Знайдено родичів у базі: {relatives}")
 
-    # 3. Відправляємо сповіщення родичам
-    if event == "taken":
-        for rel in relatives:
-            try:
+    try:
+        if event == "open":
+            await bot.send_message(user_id, f"💊 ЧАС ПРИЙМАТИ ЛІКИ ({time_str})!")
+        elif event == "taken":
+            await bot.send_message(user_id, "✅ Таблетку взято. Комірку закрито.")
+            for rel in relatives:
                 await bot.send_message(rel[0], f"✅ Пацієнт прийняв ліки о {time_str}. Все добре.")
-                print(f"🟢 Успішно відправлено повідомлення 'взято' родичу ID: {rel[0]}")
-            except Exception as e:
-                print(f"❌ ПОМИЛКА відправки родичу {rel[0]}: {e}")
-
-    elif event == "remind":
-        for rel in relatives:
-            try:
+        elif event == "remind":
+            await bot.send_message(user_id, "⏰ Будь ласка, прийміть ліки!")
+            for rel in relatives:
                 await bot.send_message(rel[0], f"🚨 ТРИВОГА! Пацієнт ігнорує прийом ліків!")
-                print(f"🔴 Успішно відправлено ТРИВОГУ родичу ID: {rel[0]}")
-            except Exception as e:
-                print(f"❌ ПОМИЛКА відправки тривоги родичу {rel[0]}: {e}")
-
-    elif event == "open":
-        print("🔓 Кришку відкрито. Родичам поки нічого не пишемо (чекаємо дії).")
+    except Exception as e:
+        print(f"❌ ПОМИЛКА відправки в Телеграм: {e}")
 
     return {"status": "success"}
 
-
-# ---------- ТЕЛЕГРАМ БОТ ----------
 def main_kb():
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="📅 Історія прийомів")],
         [KeyboardButton(text="👨‍👩‍👧‍👦 Підключити родича")]
     ], resize_keyboard=True)
 
-
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     args = message.text.split()
-
-    # Якщо перейшли за спеціальним посиланням-запрошенням
     if len(args) > 1 and args[1].startswith("patient_"):
         p_id = args[1].split("_")[1]
-        execute_db("INSERT OR IGNORE INTO Relatives (relative_id, patient_id) VALUES (?, ?)",
-                   (str(message.chat.id), p_id))
-        print(f"\n🔗 НОВИЙ РОДИЧ! ID {message.chat.id} підписався на пацієнта {p_id}")
-        return await message.answer(f"✅ Ви підключені як родич до пацієнта!\nВи будете отримувати тривоги.",
-                                    reply_markup=main_kb())
+        execute_db("INSERT OR IGNORE INTO Relatives (relative_id, patient_id) VALUES (?, ?)", (str(message.chat.id), p_id))
+        return await message.answer(f"✅ Ви підключені як родич до пацієнта!", reply_markup=main_kb())
 
     await message.answer(f"Вітаю! Ваш ID: {message.chat.id}\nВикористовуйте меню нижче.", reply_markup=main_kb())
 
-
 @dp.message(F.text == "📅 Історія прийомів")
 async def show_history(message: types.Message):
-    # Показуємо останні 10 записів
-    logs = execute_db("SELECT event, time FROM Logs WHERE user_id = ? ORDER BY id DESC LIMIT 10",
-                      (str(message.chat.id),), fetchall=True)
+    logs = execute_db("SELECT event, time FROM Logs WHERE user_id = ? ORDER BY id DESC LIMIT 10", (str(message.chat.id),), fetchall=True)
     if not logs:
         return await message.answer("📭 Історія порожня.")
-
-    names = {"open": "🔓 Кришку відкрито", "taken": "✅ ПРИЙНЯТО", "remind": "⚠️ Пропущено (Нагадування)"}
+    names = {"open": "🔓 Відкрито", "taken": "✅ ПРИЙНЯТО", "remind": "⚠️ Пропущено (Нагадування)"}
     text = "📋 **Останні події:**\n\n"
     for log in logs:
         text += f"🔹 {log[1]} — {names.get(log[0], log[0])}\n"
     await message.answer(text)
-
 
 @dp.message(F.text == "👨‍👩‍👧‍👦 Підключити родича")
 async def share_link(message: types.Message):
     me = await bot.get_me()
     link = f"https://t.me/{me.username}?start=patient_{message.chat.id}"
     await message.answer(f"Надішліть це посилання вашим рідним:\n\n{link}")
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

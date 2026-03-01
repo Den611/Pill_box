@@ -1,4 +1,3 @@
 [wokwi]
 version = 1
-firmware = 'pillbox.ino'
-elf = 'pillbox.ino'
+elf = ".pio/build/esp32dev/firmware.elf"
