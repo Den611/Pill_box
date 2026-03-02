@@ -13,15 +13,15 @@ const char* ssid = "Wokwi-GUEST";
 const char* password = "";
 
 String userId = "5118442642";
-// ⚠️ NGROK - Перевір, чи лінк актуальний!
-String pythonServerUrl = "https://cavernous-decayedness-lennie.ngrok-free.dev"; 
+//лінк
+String pythonServerUrl = "https://djpuma-pillbox.loca.lt"; 
 
 const char* ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 7200;
 const int daylightOffset_sec = 3600;
 
 // ЧАС
-String targetTime = "21:45"; 
+String targetTime = "12:06"; 
 
 bool alreadyOpenedToday = false;
 bool isLidOpen = false;
@@ -43,44 +43,39 @@ void notifyPython(String eventType) {
     lcd.print(eventType);
     
     lcd.setCursor(0, 1);
-    lcd.print("Connecting..."); // Показуємо, що процес пішов
+    lcd.print("Connecting..."); 
 
+    // 1. Створюємо БЕЗПЕЧНОГО клієнта
     WiFiClientSecure client;
-    client.setInsecure(); // Вимикаємо перевірку сертифікатів
-    client.setTimeout(15000); // Даємо 15 секунд на підключення
+    client.setInsecure(); // Вимикаємо перевірку сертифікатів (щоб не було -1)
+    client.setTimeout(15000); // Даємо час на "рукостискання"
 
     HTTPClient http;
     String url = pythonServerUrl + "/api/log?user_id=" + userId + "&event=" + eventType;
-    Serial.println("URL для перевірки: " + url);
+    Serial.print("🔗 Стукаю сюди: "); Serial.println(url);
 
+    // 2. Передаємо КЛІЄНТА і URL разом
     http.begin(client, url); 
+    
+    // 3. Дозволяємо перенаправлення (на випадок примх Ngrok)
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.addHeader("ngrok-skip-browser-warning", "1"); 
     
     int httpCode = http.GET();
     
     lcd.clear();
-    if (httpCode > 0) {
-      lcd.setCursor(0, 0);
-      lcd.print("Success!");
-      lcd.setCursor(0, 1);
-      lcd.print("Code: "); 
-      lcd.print(httpCode);
+    if (httpCode == 200) {
+      lcd.setCursor(0, 0); lcd.print("Success!");
+      lcd.setCursor(0, 1); lcd.print("Code: 200");
+      Serial.println("✅ Успіх! Код 200. Повідомлення полетіло в ТГ!");
     } else {
-      // Отримуємо текст помилки
       String errMsg = http.errorToString(httpCode);
-      
-      lcd.setCursor(0, 0);
-      lcd.print("Err: "); 
-      lcd.print(httpCode);
-      
-      // Виводимо текст помилки на другий рядок (обрізаємо до 16 символів, щоб влізло)
-      lcd.setCursor(0, 1);
-      lcd.print(errMsg.substring(0, 16));
+      lcd.setCursor(0, 0); lcd.print("Err: "); lcd.print(httpCode);
+      lcd.setCursor(0, 1); lcd.print(errMsg.substring(0, 16));
+      Serial.print("❌ Помилка: "); Serial.println(errMsg);
     }
     
     http.end();
-    
-    // Затримка 3 секунди, щоб ти встиг прочитати текст на екрані
     delay(3000); 
     lcd.clear();
   } else {
@@ -89,8 +84,7 @@ void notifyPython(String eventType) {
     lcd.print("No WiFi Error");
     delay(2000);
   }
-}
-long getDistance() {
+}long getDistance() {
   digitalWrite(trigPin, LOW); delayMicroseconds(2);
   digitalWrite(trigPin, HIGH); delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
