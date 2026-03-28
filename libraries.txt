@@ -1,4 +1,0 @@
-ESP32ServoController
-ArduinoJson
-UniversalTelegramBot
-ESP32Servo
