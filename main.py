@@ -98,6 +98,12 @@ async def get_pills(user_id: int):
         return await c.fetch(
             "SELECT * FROM pills WHERE user_id=$1 ORDER BY slot", user_id
         )
+        
+async def get_relatives(patient_id: int):
+    async with pool.acquire() as c:
+        return await c.fetch(
+            "SELECT * FROM relatives WHERE patient_id=$1", patient_id
+        )
 
 
 async def notify_relatives(patient_id: int, text: str, min_role: str = "viewer"):
@@ -113,7 +119,6 @@ async def notify_relatives(patient_id: int, text: str, min_role: str = "viewer")
             await bot.send_message(r["relative_id"], text, parse_mode="HTML")
         except Exception:
             pass
-
 
 def haversine(lat1, lon1, lat2, lon2) -> float:
     R = 6_371_000
