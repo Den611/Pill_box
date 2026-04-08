@@ -79,6 +79,23 @@ async def init_db():
         );
         """)
 
+async def get_day_times(user_id: int):
+    """Повертає словник {день: "час"}, щоб знати, коли комірка вже зайнята."""
+    async with pool.acquire() as c:
+        rows = await c.fetch(
+            "SELECT s.times, s.days FROM schedule s JOIN pills p ON s.pill_id = p.id WHERE p.user_id=$1", 
+            user_id
+        )
+    day_times = {}
+    for r in rows:
+        times = json.loads(r["times"])
+        days = json.loads(r["days"])
+        if times:
+            t = times[0]  # Беремо єдиний час прийому
+            for d in days:
+                day_times[d] = t
+    return day_times
+
 
 async def ensure_user(telegram_id: int, name: str):
     async with pool.acquire() as c:
@@ -96,7 +113,7 @@ async def get_user(telegram_id: int):
 async def get_pills(user_id: int):
     async with pool.acquire() as c:
         return await c.fetch(
-            "SELECT * FROM pills WHERE user_id=$1 ORDER BY slot", user_id
+            "SELECT * FROM pills WHERE user_id=$1 ORDER BY id", user_id
         )
         
 async def get_relatives(patient_id: int):
@@ -139,7 +156,6 @@ class AddPill(StatesGroup):
     name   = State()
     dosage = State()
     count  = State()
-    slot   = State()
     times  = State()
     days   = State()
 
@@ -161,10 +177,10 @@ def main_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="💊 Мої ліки"),      KeyboardButton(text="📅 Розклад")],
-            [KeyboardButton(text="📊 Статистика"),    KeyboardButton(text="📖 Історія")],
-            [KeyboardButton(text="🔥 Серія"),         KeyboardButton(text="🏪 Аптека поруч")],
+            [KeyboardButton(text="📝 Інструкція на тиждень"), KeyboardButton(text="📊 Статистика")],
+            [KeyboardButton(text="📖 Історія"),         KeyboardButton(text="🏪 Аптека поруч")],
             [KeyboardButton(text="👨‍👩‍👧 Родичі"),       KeyboardButton(text="⚙️ Налаштування")],
-            [KeyboardButton(text="🔄 Синхронізація")],
+            [KeyboardButton(text="🔄 Синхронізація"), KeyboardButton(text="🔥 Серія")],
         ],
         resize_keyboard=True,
     )
@@ -187,15 +203,29 @@ def location_kb():
     )
 
 
-def days_kb():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Щодня",   callback_data="days_all")],
-            [InlineKeyboardButton(text="Пн – Пт", callback_data="days_weekdays")],
-            [InlineKeyboardButton(text="Сб – Нд", callback_data="days_weekend")],
-            [InlineKeyboardButton(text="Вибрати вручну (напишіть: 0,2,4)", callback_data="days_manual")],
-        ]
-    )
+def generate_days_kb(selected: set, day_times: dict, current_time: str):
+    kb = []
+    row = []
+    for d, name in DAYS_UA.items():
+        # Якщо в цей день ВЖЕ є ліки, і їх час НЕ СПІВПАДАЄ з тим, що вводить користувач
+        if d in day_times and day_times[d] != current_time:
+            btn_text = f"⛔ {name} ({day_times[d]})"
+            cb_data = f"dblocked_{d}"
+        else:
+            mark = "✅ " if d in selected else ""
+            btn_text = f"{mark}{name}"
+            cb_data = f"dtoggle_{d}"
+            
+        row.append(InlineKeyboardButton(text=btn_text, callback_data=cb_data))
+        if len(row) == 3:
+            kb.append(row)
+            row = []
+    if row:
+        kb.append(row)
+    
+    kb.append([InlineKeyboardButton(text="🔄 Вибрати всі вільні/доступні", callback_data="dtoggle_all")])
+    kb.append([InlineKeyboardButton(text="✅ Підтвердити", callback_data="dtoggle_done")])
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 async def pills_inline_kb(user_id: int, prefix: str):
@@ -203,7 +233,7 @@ async def pills_inline_kb(user_id: int, prefix: str):
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(
-                text=f"Комірка {p['slot']}: {p['name']}",
+                text=f"💊 {p['name']}",
                 callback_data=f"{prefix}_{p['id']}",
             )]
             for p in pills
@@ -312,78 +342,80 @@ async def ap_count(message: types.Message, state: FSMContext):
     if not message.text.strip().isdigit():
         return await message.answer("⚠️ Введіть ціле число:")
     await state.update_data(count=int(message.text.strip()))
-    await state.set_state(AddPill.slot)
-    await message.answer("🗂 Номер комірки в аптечці (0 – 7):")
-
-
-@dp.message(AddPill.slot)
-async def ap_slot(message: types.Message, state: FSMContext):
-    if message.text == "❌ Скасувати":
-        await state.clear(); return await message.answer("Скасовано.", reply_markup=main_kb())
-    txt = message.text.strip()
-    if not txt.isdigit() or not (0 <= int(txt) <= 7):
-        return await message.answer("⚠️ Введіть число від 0 до 7:")
-
-    # Check if slot already taken
-    async with pool.acquire() as c:
-        existing = await c.fetchrow(
-            "SELECT name FROM pills WHERE user_id=$1 AND slot=$2",
-            message.chat.id, int(txt),
-        )
-    if existing:
-        return await message.answer(
-            f"⚠️ Комірка {txt} зайнята ({existing['name']}). Оберіть іншу:"
-        )
-    await state.update_data(slot=int(txt))
+    
     await state.set_state(AddPill.times)
-    await message.answer("⏰ Час прийому через кому (наприклад: 08:00, 20:00):")
+    await message.answer("⏰ Введіть час прийому (тільки ОДИН час, наприклад: 09:00):")
 
 
 @dp.message(AddPill.times)
 async def ap_times(message: types.Message, state: FSMContext):
     if message.text == "❌ Скасувати":
         await state.clear(); return await message.answer("Скасовано.", reply_markup=main_kb())
-    times = [t.strip() for t in message.text.split(",")]
-    for t in times:
-        try:
-            datetime.strptime(t, "%H:%M")
-        except ValueError:
-            return await message.answer("⚠️ Формат: 08:00, 20:00 (через кому):")
-    await state.update_data(times=times)
+    
+    raw_text = message.text.replace(".", ":").strip()
+    try:
+        datetime.strptime(raw_text, "%H:%M")
+    except ValueError:
+        return await message.answer("⚠️ Формат має бути HH:MM. Приклад: 09:00")
+    
+    # Отримуємо зайняті дні перед генерацією клавіатури
+    day_times = await get_day_times(message.chat.id)
+    
+    await state.update_data(times=[raw_text], selected_days=[], day_times=day_times)
     await state.set_state(AddPill.days)
-    await message.answer("📆 Дні прийому:", reply_markup=days_kb())
+    
+    await message.answer(
+        f"📆 Оберіть дні прийому для <b>{raw_text}</b>:\n"
+        f"<i>(Дні, в яких вже встановлено ІНШИЙ час, заблоковані ⛔)</i>", 
+        reply_markup=generate_days_kb(set(), day_times, raw_text),
+        parse_mode="HTML"
+    )
 
+# Обробник для заблокованих кнопок
+@dp.callback_query(AddPill.days, F.data.startswith("dblocked_"))
+async def ap_days_blocked(callback: types.CallbackQuery):
+    day = int(callback.data.split("_")[1])
+    await callback.answer(
+        f"⚠️ У {DAYS_UA[day]} вже є ліки на інший час! В один день може бути лише один час.", 
+        show_alert=True
+    )
 
-@dp.callback_query(AddPill.days)
-async def ap_days_cb(callback: types.CallbackQuery, state: FSMContext):
-    day_map = {
-        "days_all":      [0, 1, 2, 3, 4, 5, 6],
-        "days_weekdays": [0, 1, 2, 3, 4],
-        "days_weekend":  [5, 6],
-    }
-    if callback.data == "days_manual":
-        await callback.message.answer(
-            "Введіть дні через кому (0=Пн, 1=Вт, 2=Ср, 3=Чт, 4=Пт, 5=Сб, 6=Нд):\n"
-            "Приклад: 0,2,4"
-        )
+# Обробник для доступних кнопок
+@dp.callback_query(AddPill.days, F.data.startswith("dtoggle_"))
+async def ap_days_toggle(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    selected = set(data.get("selected_days", []))
+    day_times = data.get("day_times", {})
+    current_time = data["times"][0]
+    action = callback.data.split("_")[1]
+    
+    if action == "done":
+        if not selected:
+            return await callback.answer("⚠️ Оберіть хоча б один день!", show_alert=True)
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await _save_pill(callback.message, state, list(selected))
         await callback.answer()
         return
-    days = day_map.get(callback.data, [0, 1, 2, 3, 4, 5, 6])
-    await _save_pill(callback.message, state, days)
+        
+    if action == "all":
+        # Вибираємо тільки ті дні, які вільні АБО мають такий самий час
+        possible_days = {d for d in range(7) if d not in day_times or day_times[d] == current_time}
+        if len(selected) == len(possible_days):
+            selected = set()
+        else:
+            selected = possible_days
+    else:
+        day = int(action)
+        if day in selected:
+            selected.remove(day)
+        else:
+            selected.add(day)
+            
+    await state.update_data(selected_days=list(selected))
+    await callback.message.edit_reply_markup(
+        reply_markup=generate_days_kb(selected, day_times, current_time)
+    )
     await callback.answer()
-
-
-@dp.message(AddPill.days)
-async def ap_days_manual(message: types.Message, state: FSMContext):
-    if message.text == "❌ Скасувати":
-        await state.clear(); return await message.answer("Скасовано.", reply_markup=main_kb())
-    try:
-        days = [int(d.strip()) for d in message.text.split(",")]
-        if not all(0 <= d <= 6 for d in days):
-            raise ValueError
-    except ValueError:
-        return await message.answer("⚠️ Введіть числа 0–6 через кому:")
-    await _save_pill(message, state, days)
 
 
 async def _save_pill(message: types.Message, state: FSMContext, days: list):
@@ -392,7 +424,7 @@ async def _save_pill(message: types.Message, state: FSMContext, days: list):
         pill_id = await c.fetchval(
             """INSERT INTO pills(user_id, name, dosage, total_count, remaining_count, slot)
                VALUES($1,$2,$3,$4,$4,$5) RETURNING id""",
-            message.chat.id, data["name"], data["dosage"], data["count"], data["slot"],
+            message.chat.id, data["name"], data["dosage"], data["count"], 0,
         )
         await c.execute(
             "INSERT INTO schedule(pill_id, times, days) VALUES($1,$2,$3)",
@@ -402,7 +434,6 @@ async def _save_pill(message: types.Message, state: FSMContext, days: list):
     days_str = ", ".join(DAYS_UA[d] for d in sorted(days))
     await message.answer(
         f"✅ <b>{data['name']}</b> додано!\n\n"
-        f"🗂 Комірка: {data['slot']}\n"
         f"📏 Доза: {data['dosage']}\n"
         f"⏰ Час: {', '.join(data['times'])}\n"
         f"📆 Дні: {days_str}\n"
@@ -431,7 +462,7 @@ async def my_pills(message: types.Message):
             pct = int(p["remaining_count"] / p["total_count"] * 100) if p["total_count"] else 0
             bar = "🟩" * (pct // 20) + "⬜" * (5 - pct // 20)
             text += (
-                f"<b>Комірка {p['slot']}</b> — {p['name']} {p['dosage']}\n"
+                f"🔹 <b>{p['name']}</b> {p['dosage']}\n"
                 f"  ⏰ {times_str}\n"
                 f"  {bar} {p['remaining_count']}/{p['total_count']} шт.\n\n"
             )
@@ -488,7 +519,7 @@ async def edit_enter_value(callback: types.CallbackQuery, state: FSMContext):
     prompts = {
         "name":   "Введіть нову назву:",
         "dosage": "Введіть нову дозу:",
-        "times":  "Введіть нові часи (08:00, 20:00):",
+        "times":  "Введіть новий час (08:00, 20:00):",
         "count":  "Введіть нову кількість таблеток:",
     }
     await callback.message.answer(prompts[field], reply_markup=cancel_kb())
@@ -556,7 +587,7 @@ async def delete_confirm(callback: types.CallbackQuery):
         ]]
     )
     await callback.message.answer(
-        f"Видалити <b>{p['name']}</b> з комірки {p['slot']}?",
+        f"Видалити <b>{p['name']}</b>?",
         parse_mode="HTML", reply_markup=kb,
     )
     await callback.answer()
@@ -591,7 +622,7 @@ async def cmd_refill(event, state: FSMContext):
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(
-                text=f"Комірка {p['slot']}: {p['name']}",
+                text=f"💊 {p['name']}",
                 callback_data=f"rfill_{p['id']}_{p['total_count']}",
             )]
             for p in pills
@@ -633,11 +664,54 @@ async def show_schedule(message: types.Message):
             times = ", ".join(json.loads(s["times"]))
             days  = ", ".join(DAYS_UA[d] for d in sorted(json.loads(s["days"])))
             text += (
-                f"<b>Комірка {p['slot']}</b>: {p['name']} {p['dosage']}\n"
+                f"🔹 <b>{p['name']}</b> {p['dosage']}\n"
                 f"  ⏰ {times}\n"
                 f"  📆 {days}\n\n"
             )
     await message.answer(text, parse_mode="HTML")
+
+
+# ════════════════════════════════════════════════════════════
+#  📝 ІНСТРУКЦІЯ НА ТИЖДЕНЬ
+# ════════════════════════════════════════════════════════════
+@dp.message(F.text == "📝 Інструкція на тиждень")
+@dp.message(Command("instruction"))
+async def generate_weekly_instruction(message: types.Message):
+    days_names = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
+    
+    async with pool.acquire() as c:
+        pills = await c.fetch(
+            "SELECT p.*, s.days, s.times FROM pills p "
+            "JOIN schedule s ON p.id = s.pill_id "
+            "WHERE p.user_id=$1", 
+            message.chat.id
+        )
+        
+    if not pills:
+        return await message.answer("📭 У вас немає доданих ліків. Додайте їх через Налаштування.")
+
+    instruction = "📝 <b>Ваша інструкція розкладки на тиждень:</b>\n\n"
+    instruction += "<i>Відкрийте всі 7 комірок і розкладіть ліки згідно зі списком:</i>\n\n"
+    
+    for day_idx in range(7):
+        slot_num = day_idx + 1
+        day_pills = []
+        
+        for p in pills:
+            days = json.loads(p["days"])
+            if day_idx in days:
+                times = ", ".join(json.loads(p["times"]))
+                day_pills.append(f"  💊 {p['name']} ({p['dosage']}) — на {times}")
+                
+        instruction += f"🗂 <b>Комірка {slot_num} ({days_names[day_idx]}):</b>\n"
+        if day_pills:
+            instruction += "\n".join(day_pills) + "\n\n"
+        else:
+            instruction += "  <i>Пусто (прийомів немає)</i>\n\n"
+            
+    instruction += "✅ <b>Готово!</b> Закрийте кришку. Система сама нагадає вам про прийом у потрібний день та час."
+    
+    await message.answer(instruction, parse_mode="HTML")
 
 
 # ════════════════════════════════════════════════════════════
@@ -729,10 +803,9 @@ async def cmd_history(message: types.Message):
     }
     text = "📖 <b>Останні події:</b>\n\n"
     for l in logs:
-        t        = l["time"].strftime("%d.%m %H:%M")
-        name     = l["name"] or "—"
-        slot_str = f" (комірка {l['slot']})" if l["slot"] is not None else ""
-        text += f"🔹 {t} — {ev_names.get(l['event'], l['event'])}\n   {name}{slot_str}\n"
+        t    = l["time"].strftime("%d.%m %H:%M")
+        name = l["name"] or "—"
+        text += f"🔹 {t} — {ev_names.get(l['event'], l['event'])}\n   {name}\n"
 
     await message.answer(text, parse_mode="HTML")
 
@@ -960,6 +1033,7 @@ async def lifespan(app: FastAPI):
     pool = await asyncpg.create_pool(DB_URL, min_size=2, max_size=10)
     await init_db()
     scheduler.add_job(daily_stock_check, "cron", hour=9, minute=0)
+    scheduler.add_job(sunday_refill_reminder, "cron", day_of_week="sun", hour=21, minute=0)
     scheduler.start()
     asyncio.create_task(dp.start_polling(bot))
     yield
@@ -1013,21 +1087,35 @@ async def log_from_esp(
             )
 
         elif event == "taken":
-            await bot.send_message(
-                uid,
-                f"✅ <b>{pill_name}</b> прийнято о {time_str}",
-                parse_mode="HTML",
-            )
             await notify_relatives(
                 uid, f"✅ Пацієнт прийняв <b>{pill_name}</b> о {time_str}", "viewer"
             )
-            if remaining is not None and pill and pill["total_count"] > 0 and remaining <= 3:
-                await bot.send_message(
-                    uid,
-                    f"⚠️ <b>Залишилось мало!</b>\n{pill_name}: {remaining} шт.\n\n"
-                    f"Натисніть 🏪 Аптека поруч щоб знайти де купити.",
-                    parse_mode="HTML",
-                )
+            
+            if remaining is not None:
+                if remaining > 0:
+                    await bot.send_message(
+                        uid,
+                        f"✅ <b>{pill_name}</b> прийнято о {time_str}\n"
+                        f"📥 <b>Комірка {slot} тепер порожня!</b> Покладіть туди 1 таблетку з упаковки.\n"
+                        f"📦 Залишок в упаковці: {remaining} шт.",
+                        parse_mode="HTML",
+                    )
+                    
+                    if remaining <= 3:
+                        await bot.send_message(
+                            uid,
+                            f"⚠️ <b>Залишилось мало ліків в упаковці!</b>\n"
+                            f"Натисніть 🏪 Аптека поруч щоб знайти де купити.",
+                            parse_mode="HTML",
+                        )
+                else:
+                    await bot.send_message(
+                        uid,
+                        f"✅ <b>{pill_name}</b> прийнято о {time_str}\n"
+                        f"🚨 <b>Упаковка повністю порожня!</b> Комірка {slot} залишилася без ліків.\n"
+                        f"Натисніть 🏪 Аптека поруч, щоб купити нові ліки.",
+                        parse_mode="HTML",
+                    )
 
         elif event == "remind":
             await bot.send_message(
@@ -1115,6 +1203,22 @@ async def daily_stock_check():
             )
         except Exception:
             pass
+
+
+async def sunday_refill_reminder():
+    """Нагадує всім користувачам у неділю ввечері заповнити аптечку."""
+    async with pool.acquire() as c:
+        users = await c.fetch("SELECT telegram_id FROM users")
+        for u in users:
+            try:
+                await bot.send_message(
+                    u["telegram_id"],
+                    "🔔 <b>Тиждень завершується!</b>\n"
+                    "Час заповнити аптечку на наступні 7 днів. Натисніть «📝 Інструкція на тиждень», щоб отримати актуальну схему розкладки.",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
 
 
 # ════════════════════════════════════════════════════════════
