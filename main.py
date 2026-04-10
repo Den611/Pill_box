@@ -1043,6 +1043,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+@app.get("/")
+async def root():
+    return {"message": "💊 Сервер Pill Box успішно працює!"}
 
 @app.get("/api/log")
 async def log_from_esp(
@@ -1180,6 +1183,7 @@ async def get_schedule(device_id: str = Q(...), secret: str = Q("")):
         "user_id":  str(user["telegram_id"]),
         "schedule": schedule,
     }
+
 
 
 # ════════════════════════════════════════════════════════════
