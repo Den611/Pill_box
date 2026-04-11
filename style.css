@@ -150,7 +150,7 @@ section { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; pad
 .step { background: var(--card); padding: 2.5rem 2rem; position: relative; transition: background .2s; }
 .step:hover { background: var(--surface); }
 .step-num { font-family: 'Bebas Neue', sans-serif; font-size: 5rem; color: rgba(0,212,170,0.08); line-height: 1; position: absolute; top: 1rem; right: 1.5rem; }
-.step-icon { font-size: 2rem; margin-bottom: 1rem; }
+.step-icon { font-size: 2rem; margin-bottom: 1rem; color: var(--teal); }
 .step h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem; }
 .step p { font-size: 0.9rem; color: var(--muted); line-height: 1.6; }
 
@@ -161,7 +161,7 @@ section { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; pad
 .feature-card::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(0,212,170,0.04), transparent 60%); opacity: 0; transition: opacity .2s; }
 .feature-card:hover { border-color: rgba(0,212,170,0.35); transform: translateY(-3px); }
 .feature-card:hover::before { opacity: 1; }
-.feature-icon { font-size: 1.5rem; margin-bottom: 1rem; display: block; }
+.feature-icon { font-size: 1.5rem; margin-bottom: 1rem; display: block; color: var(--teal); }
 .feature-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.4rem; }
 .feature-card p { font-size: 0.85rem; color: var(--muted); line-height: 1.6; }
 
