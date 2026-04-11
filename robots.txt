@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://den611.github.io/Pill_box/sitemap.xml
