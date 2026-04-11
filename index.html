@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PillBox — Розумна таблетниця</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Manrope:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a href="#" class="nav-logo">PILL<span>BOX</span></a>
+  <ul>
+    <li><a href="#how">Як працює</a></li>
+    <li><a href="#features">Функції</a></li>
+    <li><a href="#setup">Початок</a></li>
+    <li><a href="#gallery">Фото</a></li>
+    <li><a href="https://t.me/s1m1a1r1t1_1p1i1l1l_1b1o11x_bot" class="nav-cta">Відкрити бота</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-badge">IoT · Telegram · Турбота про здоров'я</div>
+  <h1>РОЗУМНА<br><span class="accent">ТАБЛЕТНИЦЯ</span><br>ДЛЯ ВСІЄЇ СІМ'Ї</h1>
+  <p class="hero-sub">PillBox — автоматизований пристрій для прийому ліків із Telegram-ботом. Контролюй дозування, отримуй нагадування та стеж за близькими.</p>
+  <div class="hero-actions">
+    <a href="https://t.me/s1m1a1r1t1_1p1i1l1l_1b1o11x_bot" class="btn btn-primary">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/></svg>
+      Відкрити бота
+    </a>
+    <a href="#how" class="btn btn-outline">Як це працює →</a>
+  </div>
+
+  <div class="hero-visual">
+    <div class="pill-slot"><div class="pill-dot active"></div> Slot 1 · Аспірин · 08:00</div>
+    <div class="pill-slot"><div class="pill-dot active"></div> Slot 2 · Омега-3 · 12:00</div>
+    <div class="pill-slot"><div class="pill-dot warn"></div> Slot 3 · Магній · 20:00</div>
+    <div class="pill-slot"><div class="pill-dot empty"></div> Slot 4 · Порожньо</div>
+    <div class="pill-slot"><div class="pill-dot active"></div> Slot 5 · Вітамін D · 08:00</div>
+    <div class="pill-slot"><div class="pill-dot empty"></div> Slot 6 · Порожньо</div>
+    <div class="pill-slot"><div class="pill-dot warn"></div> Slot 7 · Метформін · 18:00</div>
+  </div>
+</div>
+
+<!-- QUOTE -->
+<div class="quote-section">
+  <div class="quote-inner reveal">
+    <span class="quote-marks">"</span>
+    <p class="quote-text">Найбільша цінність PillBox — не функції. Це відчуття, що хтось слідкує. Що все під контролем. Навіть коли тебе немає поруч.</p>
+    <div class="quote-author">— Команда PillBox</div>
+  </div>
+</div>
+
+<!-- HOW IT WORKS -->
+<section id="how">
+  <div class="reveal">
+    <div class="section-label">Принцип роботи</div>
+    <h2 class="section-title">ЯК ЦЕ ПРАЦЮЄ</h2>
+    <p class="section-desc">Фізичний пристрій, Telegram-бот і хмарна база даних — три компоненти, що діють як одне ціле.</p>
+  </div>
+  <div class="steps reveal">
+    <div class="step">
+      <div class="step-num">01</div>
+      <div class="step-icon">💊</div>
+      <h3>Заповни комірки</h3>
+      <p>Поклади ліки у 7 пронумерованих слотів пристрою. Через бота вкажи назву, дозу та кількість таблеток.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">02</div>
+      <div class="step-icon">🤖</div>
+      <h3>Налаштуй розклад</h3>
+      <p>Встанови час і дні прийому через Telegram-бота. Пристрій автоматично синхронізує розклад по Wi-Fi.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">03</div>
+      <div class="step-icon">🔔</div>
+      <h3>Отримуй нагадування</h3>
+      <p>У потрібний час бот надсилає повідомлення. Факт відкриття комірки фіксується — ведеться вся статистика.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">04</div>
+      <div class="step-icon">👨‍👩‍👧</div>
+      <h3>Слідкують рідні</h3>
+      <p>Запроси родичів як спостерігачів. Вони отримуватимуть сповіщення, якщо ліки не взяті вчасно.</p>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="reveal">
+    <div class="section-label">Функціонал бота</div>
+    <h2 class="section-title">ВСЕ ПІД РУКОЮ<br>В TELEGRAM</h2>
+    <p class="section-desc">Повне управління пристроєм через зручний чат-бот — без жодних застосунків та реєстрацій.</p>
+  </div>
+  <div class="features-grid reveal">
+    <div class="feature-card">
+      <span class="feature-icon">📅</span>
+      <h3>Гнучкий розклад</h3>
+      <p>Встанови будь-який час і дні тижня для кожного препарату. Кілька прийомів на день — без обмежень.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">📊</span>
+      <h3>Статистика прийому</h3>
+      <p>Зведення по кожному препарату: скільки прийнято, пропущено, відсоток дотримання курсу.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🔥</span>
+      <h3>Серія (Streak)</h3>
+      <p>Відстежуй кількість днів поспіль без пропусків — мотивація дотримуватись курсу лікування.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">📖</span>
+      <h3>Тижнева інструкція</h3>
+      <p>Автоматично генерується читабельний план прийому ліків на весь тиждень у зручному форматі.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">⚠️</span>
+      <h3>Контроль запасів</h3>
+      <p>Щоденна перевірка залишків. Бот попередить, коли таблетки закінчуються, і нагадає поповнити.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🏪</span>
+      <h3>Аптека поруч</h3>
+      <p>Надішли геолокацію — бот знайде найближчі аптеки та покаже відстань до них.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">👨‍👩‍👧</span>
+      <h3>Родинний доступ</h3>
+      <p>Запроси рідних як спостерігачів або адміністраторів. Вони отримають сповіщення, якщо близька людина забула прийняти ліки.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🔗</span>
+      <h3>Прив'язка пристрою</h3>
+      <p>Прив'яжи фізичний пристрій однією командою через унікальний код. Синхронізація — миттєва.</p>
+    </div>
+  </div>
+</section>
+
+<!-- SETUP -->
+<section id="setup">
+  <div class="reveal">
+    <div class="section-label">Початок роботи</div>
+    <h2 class="section-title">ПОЧАТИ ЗА<br>5 ХВИЛИН</h2>
+    <p class="section-desc">Для старту потрібен лише Telegram і сам пристрій. Все інше бот зробить сам.</p>
+  </div>
+  <div class="setup-steps reveal">
+    <div class="setup-step">
+      <div class="setup-num">1</div>
+      <div class="setup-content">
+        <h4>Знайди бота в Telegram</h4>
+        <p>Перейди за посиланням або знайди <code>@s1m1a1r1t1_1p1i1l1l_1b1o11x_bot</code> у пошуку Telegram. Натисни <strong>Старт</strong> — бот зареєструє тебе автоматично.</p>
+      </div>
+    </div>
+    <div class="setup-step">
+      <div class="setup-num">2</div>
+      <div class="setup-content">
+        <h4>Прив'яжи пристрій</h4>
+        <p>У меню обери <strong>⚙️ Налаштування → Прив'язати пристрій</strong> та введи унікальний код, вказаний на корпусі таблетниці.</p>
+      </div>
+    </div>
+    <div class="setup-step">
+      <div class="setup-num">3</div>
+      <div class="setup-content">
+        <h4>Додай перші ліки</h4>
+        <p>Натисни <strong>💊 Мої ліки → Додати</strong>. Вкажи назву, дозу, кількість, час та дні прийому — бот проведе тебе крок за кроком.</p>
+      </div>
+    </div>
+    <div class="setup-step">
+      <div class="setup-num">4</div>
+      <div class="setup-content">
+        <h4>Синхронізуй розклад</h4>
+        <p>Натисни <strong>🔄 Синхронізація</strong> — пристрій отримає актуальний розклад по Wi-Fi і почне відраховувати час.</p>
+      </div>
+    </div>
+    <div class="setup-step">
+      <div class="setup-num">5</div>
+      <div class="setup-content">
+        <h4>Запроси рідних (за бажанням)</h4>
+        <p>Через меню <strong>👨‍👩‍👧 Родичі</strong> надішли запрошення близьким — вони теж отримуватимуть сповіщення про прийом ліків.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- GALLERY -->
+<section id="gallery">
+  <div class="reveal">
+    <div class="section-label">Галерея</div>
+    <h2 class="section-title">ФОТО ПРИСТРОЮ</h2>
+    <p class="section-desc">Фотографії та відео невдовзі з'являться тут. Слідкуй за оновленнями.</p>
+  </div>
+  <div class="gallery-grid reveal">
+    <div class="gallery-item wide">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+      Головне фото пристрою
+    </div>
+    <div class="gallery-item">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+      Комірки зблизька
+    </div>
+    <div class="gallery-item">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+      Відео-демо
+    </div>
+    <div class="gallery-item">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+      Скріншот бота
+    </div>
+    <div class="gallery-item">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+      Внутрішня схема
+    </div>
+    <div class="gallery-item">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+      В процесі збирання
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-logo">PILL<span>BOX</span></div>
+  <p>Зроблено з ❤️ для турботи про здоров'я</p>
+  <p><a href="https://github.com/Den611/Pill_box">GitHub →</a></p>
+</footer>
+
+<script src="script.js" defer></script>
+</body>
+</html>
