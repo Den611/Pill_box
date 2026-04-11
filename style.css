@@ -14,7 +14,8 @@
 html { scroll-behavior: smooth; }
 
 body {
-  background: var(--bg);
+  background: var(--bg) url('images/bg.png') no-repeat center center fixed;
+  background-size: cover;
   color: var(--text);
   font-family: 'Manrope', sans-serif;
   font-weight: 400;
@@ -26,6 +27,7 @@ body::before {
   content: '';
   position: fixed;
   inset: 0;
+  background-color: rgba(8, 13, 20, 0.65);
   background-image:
     linear-gradient(rgba(0,212,170,0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0,212,170,0.03) 1px, transparent 1px);
@@ -195,9 +197,28 @@ footer a { color: var(--teal); text-decoration: none; }
 .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease, transform 0.6s ease; }
 .reveal.visible { opacity: 1; transform: translateY(0); }
 
-@media (max-width: 768px) {
-  .hero-visual { display: none; }
-  nav ul { display: none; }
-  .gallery-grid { grid-template-columns: 1fr; }
-  .gallery-item.wide { grid-column: span 1; }
-}
+  @media (max-width: 768px) {
+    nav { padding: 1rem 1.5rem; }
+    nav ul { display: none; }
+    .nav-logo { font-size: 1.6rem; }
+
+    .hero { padding: 7rem 1.5rem 4rem; text-align: center; align-items: center; }
+    .hero-badge { margin-left: auto; margin-right: auto; }
+    .hero h1 { font-size: clamp(3rem, 13vw, 4rem); }
+    .hero-sub { text-align: center; }
+    .hero-actions { justify-content: center; }
+    .hero-visual { display: none; }
+
+    .quote-section, section { padding: 4rem 1.5rem; }
+    .quote-text { font-size: 1.25rem; }
+
+    .steps { grid-template-columns: 1fr; }
+    .step { padding: 2rem 1.5rem; }
+
+    .features-grid { grid-template-columns: 1fr; }
+
+    .gallery-grid { grid-template-columns: 1fr; }
+    .gallery-item.wide { grid-column: span 1; aspect-ratio: 4/3; }
+
+    footer { padding: 2.5rem 1.5rem; flex-direction: column; align-items: center; text-align: center; gap: 1rem; }
+  }
