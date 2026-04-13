@@ -1153,6 +1153,21 @@ async def get_schedule(device_id: str = Q(...), secret: str = Q("")):
     """
     ESP32 calls this on boot to get its full schedule.
     Returns JSON ready to parse in Arduino.
+
+    Response format:
+    {
+      "user_id": "5118442642",
+      "time": ["08:00", "20:00"],   // all unique intake times across all pills
+      "schedule": [
+        {
+          "slot": 1,
+          "name": "Аспірин",
+          "dosage": "500 мг",
+          "days": [0, 1, 2, 3, 4, 5, 6]
+        },
+        ...
+      ]
+    }
     """
     if secret != API_SECRET:
         raise HTTPException(403, "Forbidden")
@@ -1165,22 +1180,75 @@ async def get_schedule(device_id: str = Q(...), secret: str = Q("")):
             raise HTTPException(404, "Device not found")
 
         pills = await c.fetch(
-            "SELECT * FROM pills WHERE user_id=$1", user["telegram_id"]
+            "SELECT * FROM pills WHERE user_id=$1 ORDER BY slot", user["telegram_id"]
         )
+
         schedule = []
+        intake_time = None   # один час прийому для всіх ліків
+
         for p in pills:
             s = await c.fetchrow("SELECT * FROM schedule WHERE pill_id=$1", p["id"])
-            if s:
-                schedule.append({
-                    "slot":   p["slot"],
-                    "name":   p["name"],
-                    "dosage": p["dosage"],
-                    "times":  json.loads(s["times"]),
-                    "days":   json.loads(s["days"]),
-                })
+            if not s:
+                continue
+
+            pill_times = json.loads(s["times"])
+
+            # Беремо перший знайдений час (він єдиний у системі)
+            if intake_time is None and pill_times:
+                intake_time = pill_times[0]
+
+            schedule.append({
+                "slot":   p["slot"],
+                "name":   p["name"],
+                "dosage": p["dosage"],
+                "days":   json.loads(s["days"]),
+            })
 
     return {
         "user_id":  str(user["telegram_id"]),
+        "time":     intake_time or "",
+        "schedule": schedule,
+    }
+
+
+
+
+
+    """Тестовий ендпоінт — приймає Telegram user_id напряму, без device_id."""
+@app.get("/api/schedule/by_user")
+async def get_schedule_by_user(user_id: str = Q(...), secret: str = Q("")):
+    if secret != API_SECRET:
+        raise HTTPException(403, "Forbidden")
+
+    uid = int(user_id)
+
+    async with pool.acquire() as c:
+        pills = await c.fetch(
+            "SELECT * FROM pills WHERE user_id=$1 ORDER BY slot", uid
+        )
+
+        schedule = []
+        intake_time = None
+
+        for p in pills:
+            s = await c.fetchrow("SELECT * FROM schedule WHERE pill_id=$1", p["id"])
+            if not s:
+                continue
+
+            pill_times = json.loads(s["times"])
+            if intake_time is None and pill_times:
+                intake_time = pill_times[0]
+
+            schedule.append({
+                "slot":   p["slot"],
+                "name":   p["name"],
+                "dosage": p["dosage"],
+                "days":   json.loads(s["days"]),
+            })
+
+    return {
+        "user_id":  str(uid),
+        "time":     intake_time or "",
         "schedule": schedule,
     }
 
