@@ -26,21 +26,19 @@ API_SECRET = os.getenv("API_SECRET", "changeme")
 bot       = Bot(token=BOT_TOKEN)
 dp        = Dispatcher(storage=MemoryStorage())
 scheduler = AsyncIOScheduler()
-pool: asyncpg.Pool = None   # set in lifespan
+pool: asyncpg.Pool = None   # ініціалізується пізніше
 
 
-# ════════════════════════════════════════════════════════════
-#  XOR ENCRYPTION HELPERS
-# ════════════════════════════════════════════════════════════
+# допоміжні функції для шифрування (xor)
 def xor_encrypt(data: str, key: str) -> str:
-    """Encrypt: XOR the data bytes with key bytes, then Base64 encode."""
+    """зашифрувати xor'ом і в base64"""
     kb = key.encode("utf-8")
     db = data.encode("utf-8")
     return base64.b64encode(bytes(b ^ kb[i % len(kb)] for i, b in enumerate(db))).decode("utf-8")
 
 
 def xor_decrypt(data_b64: str, key: str) -> str:
-    """Decrypt: Base64 decode, then XOR with key bytes."""
+    """розшифровуємо базік + xor"""
     if not data_b64: return data_b64
     kb = key.encode("utf-8")
     try:
@@ -65,9 +63,7 @@ TERMS_TEXT = (
 )
 
 
-# ════════════════════════════════════════════════════════════
-#  DATABASE — INIT + HELPERS
-# ════════════════════════════════════════════════════════════
+# робота з бд
 async def init_db():
     async with pool.acquire() as c:
         await c.execute("""
@@ -114,7 +110,7 @@ async def init_db():
             time    TIMESTAMPTZ DEFAULT NOW()
         );
         """)
-        # Add new columns for existing databases
+        # додаємо колонки якщо старих немає
         await c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_ping TIMESTAMPTZ")
         await c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_terms BOOLEAN DEFAULT FALSE")
         await c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS esp_notified BOOLEAN DEFAULT FALSE")
@@ -177,7 +173,7 @@ async def get_relatives(patient_id: int):
 
 
 async def notify_relatives(patient_id: int, text: str, min_role: str = "viewer"):
-    """Send message to all relatives with role >= min_role."""
+#повідомлення всім родичам
     roles = ["viewer", "admin"] if min_role == "viewer" else ["admin"]
     async with pool.acquire() as c:
         rels = await c.fetch(
@@ -202,9 +198,7 @@ def haversine(lat1, lon1, lat2, lon2) -> float:
 DAYS_UA = {0: "Пн", 1: "Вт", 2: "Ср", 3: "Чт", 4: "Пт", 5: "Сб", 6: "Нд"}
 
 
-# ════════════════════════════════════════════════════════════
-#  FSM STATES
-# ════════════════════════════════════════════════════════════
+# стани для фсм
 class AddPill(StatesGroup):
     name   = State()
     dosage = State()
@@ -223,9 +217,7 @@ class LinkDevice(StatesGroup):
     waiting_id = State()
 
 
-# ════════════════════════════════════════════════════════════
-#  KEYBOARDS
-# ════════════════════════════════════════════════════════════
+# кнопки
 def main_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -294,9 +286,9 @@ async def pills_inline_kb(user_id: int, prefix: str):
     )
 
 
-# ════════════════════════════════════════════════════════════
+
 #  /start
-# ════════════════════════════════════════════════════════════
+
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
@@ -304,7 +296,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
 
     await ensure_user(message.chat.id, message.from_user.first_name)
 
-    # ── Terms / Privacy gate ──────────────────────────────────
+    # питаємо згоду на використання
     user = await get_user(message.chat.id)
     if not user["accepted_terms"]:
         kb = InlineKeyboardMarkup(
@@ -314,7 +306,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         )
         return await message.answer(TERMS_TEXT, parse_mode="HTML", reply_markup=kb)
 
-    # Relative deep link: /start patient_<id>_<role>
+    # рефералка для родичів
     if len(args) > 1 and args[1].startswith("patient_"):
         parts = args[1].split("_")
         patient_id = int(parts[1])
@@ -341,9 +333,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
     )
 
 
-# ════════════════════════════════════════════════════════════
-#  ACCEPT TERMS CALLBACK
-# ════════════════════════════════════════════════════════════
+# обробка згоди користувача
 @dp.callback_query(F.data == "accept_terms")
 async def accept_terms_cb(callback: types.CallbackQuery):
     async with pool.acquire() as c:
@@ -363,9 +353,9 @@ async def accept_terms_cb(callback: types.CallbackQuery):
     await callback.answer("✅ Умови прийнято!")
 
 
-# ════════════════════════════════════════════════════════════
+
 #  /link_device
-# ════════════════════════════════════════════════════════════
+
 @dp.message(Command("link_device"))
 async def cmd_link_device(message: types.Message, state: FSMContext):
     await state.set_state(LinkDevice.waiting_id)
@@ -393,9 +383,9 @@ async def link_device_done(message: types.Message, state: FSMContext):
     )
 
 
-# ════════════════════════════════════════════════════════════
-#  /add_pill  — FSM
-# ════════════════════════════════════════════════════════════
+    
+#  /add_pill
+
 @dp.message(Command("add_pill"))
 async def cmd_add_pill(message: types.Message, state: FSMContext):
     await state.set_state(AddPill.name)
@@ -529,9 +519,9 @@ async def _save_pill(message: types.Message, state: FSMContext, days: list):
     )
 
 
-# ════════════════════════════════════════════════════════════
+
 #  💊 МОЇ ЛІКИ
-# ════════════════════════════════════════════════════════════
+
 @dp.message(F.text == "💊 Мої ліки")
 @dp.message(Command("my_pills"))
 async def my_pills(message: types.Message):
@@ -562,9 +552,7 @@ async def my_pills(message: types.Message):
     await message.answer(text, parse_mode="HTML", reply_markup=kb)
 
 
-# ════════════════════════════════════════════════════════════
-#  EDIT PILL — FSM
-# ════════════════════════════════════════════════════════════
+# Edit pill
 @dp.callback_query(F.data == "go_edit")
 @dp.message(Command("edit_pill"))
 async def cmd_edit_pill(event, state: FSMContext):
@@ -644,9 +632,7 @@ async def edit_save(message: types.Message, state: FSMContext):
     )
 
 
-# ════════════════════════════════════════════════════════════
-#  DELETE PILL
-# ════════════════════════════════════════════════════════════
+# Delete pill
 @dp.callback_query(F.data == "go_delete")
 @dp.message(Command("delete_pill"))
 async def cmd_delete_pill(event, state: FSMContext):
@@ -694,9 +680,7 @@ async def delete_cancel(callback: types.CallbackQuery):
     await callback.answer()
 
 
-# ════════════════════════════════════════════════════════════
-#  REFILL
-# ════════════════════════════════════════════════════════════
+# Refill
 @dp.callback_query(F.data == "go_refill")
 @dp.message(Command("refill"))
 async def cmd_refill(event, state: FSMContext):
@@ -733,9 +717,9 @@ async def refill_execute(callback: types.CallbackQuery):
     await callback.answer()
 
 
-# ════════════════════════════════════════════════════════════
+
 #  📅 РОЗКЛАД
-# ════════════════════════════════════════════════════════════
+
 @dp.message(F.text == "📅 Розклад")
 async def show_schedule(message: types.Message):
     pills = await get_pills(message.chat.id)
@@ -757,9 +741,9 @@ async def show_schedule(message: types.Message):
     await message.answer(text, parse_mode="HTML")
 
 
-# ════════════════════════════════════════════════════════════
+
 #  📝 ІНСТРУКЦІЯ НА ТИЖДЕНЬ
-# ════════════════════════════════════════════════════════════
+
 @dp.message(F.text == "📝 Інструкція на тиждень")
 @dp.message(Command("instruction"))
 async def generate_weekly_instruction(message: types.Message):
@@ -802,9 +786,9 @@ async def generate_weekly_instruction(message: types.Message):
     await message.answer(instruction, parse_mode="HTML")
 
 
-# ════════════════════════════════════════════════════════════
+
 #  🔄 СИНХРОНІЗАЦІЯ
-# ════════════════════════════════════════════════════════════
+
 @dp.message(F.text == "🔄 Синхронізація")
 @dp.message(Command("sync"))
 async def cmd_sync(message: types.Message):
@@ -819,9 +803,9 @@ async def cmd_sync(message: types.Message):
     )
 
 
-# ════════════════════════════════════════════════════════════
+
 #  📊 СТАТИСТИКА
-# ════════════════════════════════════════════════════════════
+
 @dp.message(F.text == "📊 Статистика")
 @dp.message(Command("stats"))
 async def cmd_stats(message: types.Message):
@@ -867,9 +851,9 @@ async def cmd_stats(message: types.Message):
     )
 
 
-# ════════════════════════════════════════════════════════════
+
 #  📖 ІСТОРІЯ
-# ════════════════════════════════════════════════════════════
+
 @dp.message(F.text == "📖 Історія")
 @dp.message(Command("history"))
 async def cmd_history(message: types.Message):
@@ -898,9 +882,9 @@ async def cmd_history(message: types.Message):
     await message.answer(text, parse_mode="HTML")
 
 
-# ════════════════════════════════════════════════════════════
+
 #  🔥 СЕРІЯ
-# ════════════════════════════════════════════════════════════
+
 @dp.message(F.text == "🔥 Серія")
 @dp.message(Command("streak"))
 async def cmd_streak(message: types.Message):
@@ -940,9 +924,9 @@ async def cmd_streak(message: types.Message):
     await message.answer(msg, parse_mode="HTML")
 
 
-# ════════════════════════════════════════════════════════════
+
 #  🏪 АПТЕКА ПОРУЧ
-# ════════════════════════════════════════════════════════════
+
 @dp.message(F.text == "🏪 Аптека поруч")
 @dp.message(Command("find_pharmacy"))
 async def cmd_find_pharmacy(message: types.Message):
@@ -1004,9 +988,9 @@ async def back_to_main(message: types.Message):
     await message.answer("Головне меню:", reply_markup=main_kb())
 
 
-# ════════════════════════════════════════════════════════════
+
 #  👨‍👩‍👧 РОДИЧІ
-# ════════════════════════════════════════════════════════════
+
 @dp.message(F.text == "👨‍👩‍👧 Родичі")
 @dp.message(Command("invite_relative"))
 async def cmd_relatives(message: types.Message):
@@ -1077,9 +1061,9 @@ async def remove_relative_cb(callback: types.CallbackQuery):
     await callback.answer()
 
 
-# ════════════════════════════════════════════════════════════
+
 #  ⚙️ НАЛАШТУВАННЯ
-# ════════════════════════════════════════════════════════════
+
 @dp.message(F.text == "⚙️ Налаштування")
 async def cmd_settings(message: types.Message, state: FSMContext):
     user   = await get_user(message.chat.id)
@@ -1112,9 +1096,7 @@ async def go_add_pill_cb(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ════════════════════════════════════════════════════════════
-#  FASTAPI APP + ROUTES
-# ════════════════════════════════════════════════════════════
+# ендпоінти апі
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global pool
@@ -1138,9 +1120,8 @@ async def root():
     return {"message": "💊 Сервер Pill Box успішно працює!"}
 
 
-@app.get("/api/ping")
+@app.get("/api/ping") # есп стукає сюди
 async def ping_from_esp(device_id: str = Q(...), secret: str = Q("")):
-    """ESP32 calls this every 5-10 minutes to signal it's alive."""
     if secret != API_SECRET:
         raise HTTPException(403, "Forbidden")
     async with pool.acquire() as c:
@@ -1151,14 +1132,13 @@ async def ping_from_esp(device_id: str = Q(...), secret: str = Q("")):
     return {"status": "ok", "time": datetime.now().isoformat()}
 
 
-@app.get("/api/log")
+@app.get("/api/log")#есп стукає сюди коли щось сталось
 async def log_from_esp(
     user_id: str = Q(...),
     event:   str = Q(...),
     slot:    int = Q(0),
     secret:  str = Q(""),
 ):
-    """Called by ESP32 on every pill event."""
     if secret != API_SECRET:
         raise HTTPException(403, "Forbidden")
 
@@ -1249,7 +1229,7 @@ async def log_from_esp(
     except Exception as e:
         print(f"[Telegram error] {e}")
 
-    # Update last_ping — ESP32 is alive
+    # оновлюємо час останнього пінгу 
     async with pool.acquire() as c:
         await c.execute(
             "UPDATE users SET last_ping = NOW(), esp_notified = FALSE WHERE telegram_id=$1",
@@ -1262,10 +1242,6 @@ async def log_from_esp(
 @app.get("/api/schedule")
 async def get_schedule(device_id: str = Q(...), secret: str = Q("")):
     """
-    ESP32 calls this on boot to get its full schedule.
-    Returns JSON ready to parse in Arduino.
-
-    Response format:
     {
       "user_id": "5118442642",
       "time": ["08:00", "20:00"],   // all unique intake times across all pills
@@ -1290,7 +1266,7 @@ async def get_schedule(device_id: str = Q(...), secret: str = Q("")):
         if not user:
             raise HTTPException(404, "Device not found")
 
-        # Update last_ping — ESP32 is alive
+        # оновлюємо час останнього пінгу (есп жива)
         await c.execute(
             "UPDATE users SET last_ping = NOW(), esp_notified = FALSE WHERE device_id=$1",
             device_id,
@@ -1310,7 +1286,7 @@ async def get_schedule(device_id: str = Q(...), secret: str = Q("")):
 
             pill_times = json.loads(xor_decrypt(s["times"], API_SECRET))
 
-            # Беремо перший знайдений час (він єдиний у системі)
+            # беремо перший знайдений час (він єдиний у системі)
             if intake_time is None and pill_times:
                 intake_time = pill_times[0]
 
@@ -1329,10 +1305,6 @@ async def get_schedule(device_id: str = Q(...), secret: str = Q("")):
     return result
 
 
-
-
-
-    """Тестовий ендпоінт — приймає Telegram user_id напряму, без device_id."""
 @app.get("/api/schedule/by_user")
 async def get_schedule_by_user(user_id: str = Q(...), secret: str = Q("")):
     if secret != API_SECRET:
@@ -1372,9 +1344,8 @@ async def get_schedule_by_user(user_id: str = Q(...), secret: str = Q("")):
 
 
 
-# ════════════════════════════════════════════════════════════
-#  SCHEDULED JOB — щоденна перевірка залишків
-# ════════════════════════════════════════════════════════════
+# щоденна перевірка залишків
+
 async def daily_stock_check():
     async with pool.acquire() as c:
         low = await c.fetch(
@@ -1396,8 +1367,7 @@ async def daily_stock_check():
             pass
 
 
-async def sunday_refill_reminder():
-    """Нагадує всім користувачам у неділю ввечері заповнити аптечку."""
+async def sunday_refill_reminder():#час поповнити ліки
     async with pool.acquire() as c:
         users = await c.fetch("SELECT telegram_id FROM users")
         for u in users:
@@ -1413,7 +1383,6 @@ async def sunday_refill_reminder():
 
 
 async def check_reminders():
-    """Executed every minute — checks schedule and sends Telegram reminders."""
     now = datetime.now()
     current_day = now.weekday()        # 0=Mon … 6=Sun
     current_time = now.strftime("%H:%M")
@@ -1438,8 +1407,7 @@ async def check_reminders():
                 pass
 
 
-async def check_esp_status():
-    """Runs every 10 min — alerts users whose ESP32 hasn't pinged in 20+ minutes."""
+async def check_esp_status(): #раз на 10хв перевіряємо чи відвалилась еспшка
     threshold = datetime.now() - timedelta(minutes=20)
     async with pool.acquire() as c:
         users = await c.fetch(
@@ -1466,8 +1434,5 @@ async def check_esp_status():
                 pass
 
 
-# ════════════════════════════════════════════════════════════
-#  ENTRY POINT
-# ════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
