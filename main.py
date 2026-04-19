@@ -1385,12 +1385,23 @@ async def check_reminders():
     now = datetime.now()
     current_day = now.weekday()        # 0=Mon … 6=Sun
     current_time = now.strftime("%H:%M")
+    
+    # Визначаємо поріг "втрати зв'язку" (20 хвилин без пінгу)
+    threshold = now - timedelta(minutes=20)
 
     async with pool.acquire() as c:
+        # Додаємо JOIN з таблицею users і умову WHERE для перевірки last_ping
         rows = await c.fetch(
-            "SELECT s.times, s.days, p.name, p.user_id "
-            "FROM schedule s JOIN pills p ON s.pill_id = p.id"
+            """
+            SELECT s.times, s.days, p.name, p.user_id 
+            FROM schedule s 
+            JOIN pills p ON s.pill_id = p.id
+            JOIN users u ON p.user_id = u.telegram_id
+            WHERE u.last_ping IS NULL OR u.last_ping < $1
+            """,
+            threshold
         )
+        
     for r in rows:
         days = json.loads(xor_decrypt(r["days"], API_SECRET))
         times = json.loads(xor_decrypt(r["times"], API_SECRET))
@@ -1399,7 +1410,8 @@ async def check_reminders():
                 name = xor_decrypt(r["name"], API_SECRET)
                 await bot.send_message(
                     r["user_id"],
-                    f"⏰ Нагадування: час прийняти ліки: <b>{name}</b>",
+                    f"⏰ Нагадування: час прийняти ліки <b>{name}</b>!\n"
+                    f"<i>(Відправлено, оскільки зв'язок з таблетницею втрачено ⚠️)</i>",
                     parse_mode="HTML",
                 )
             except Exception:
