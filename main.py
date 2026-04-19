@@ -6,7 +6,7 @@ import asyncpg
 import uvicorn
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query as Q
+from fastapi import FastAPI, HTTPException, Request, Query as Q
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -499,11 +499,17 @@ async def _save_pill(message: types.Message, state: FSMContext, days: list):
         pill_id = await c.fetchval(
             """INSERT INTO pills(user_id, name, dosage, total_count, remaining_count, slot)
                VALUES($1,$2,$3,$4,$4,$5) RETURNING id""",
-            message.chat.id, xor_encrypt(data["name"], API_SECRET), xor_encrypt(data["dosage"], API_SECRET), data["count"], 0,
+            message.chat.id, 
+            xor_encrypt(data["name"], API_SECRET), 
+            xor_encrypt(data["dosage"], API_SECRET), 
+            data["count"], 
+            -1,  # ← Мертва колонка, ставимо -1
         )
         await c.execute(
             "INSERT INTO schedule(pill_id, times, days) VALUES($1,$2,$3)",
-            pill_id, xor_encrypt(json.dumps(data["times"]), API_SECRET), xor_encrypt(json.dumps(days), API_SECRET),
+            pill_id, 
+            xor_encrypt(json.dumps(data["times"]), API_SECRET), 
+            xor_encrypt(json.dumps(days), API_SECRET),
         )
     await state.clear()
     days_str = ", ".join(DAYS_UA[d] for d in sorted(days))
@@ -1142,99 +1148,92 @@ async def log_from_esp(
     if secret != API_SECRET:
         raise HTTPException(403, "Forbidden")
 
-    uid      = int(user_id)
+    uid = int(user_id)
     time_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
 
+    # ESP шле 0-6
+    check_day = slot
+
     async with pool.acquire() as c:
-        pill = await c.fetchrow(
-            "SELECT * FROM pills WHERE user_id=$1 AND slot=$2", uid, slot
+        # 1. Знаходимо всі ліки юзера
+        pills = await c.fetch(
+            "SELECT p.*, s.days FROM pills p JOIN schedule s ON p.id = s.pill_id WHERE p.user_id=$1", uid
         )
-        await c.execute(
-            "INSERT INTO logs(user_id, pill_id, slot, event) VALUES($1,$2,$3,$4)",
-            uid, pill["id"] if pill else None, slot, event,
-        )
-        remaining = None
-        if event == "taken" and pill:
+        
+        # 2. Відбираємо ті, що заплановані на поточний день
+        current_day_pills = []
+        for p in pills:
+            days = json.loads(xor_decrypt(p["days"], API_SECRET))
+            if check_day in days:
+                current_day_pills.append(p)
+
+        # 3. GUARD-блок для захисту від крашу
+        if not current_day_pills and event == "taken":
+            print(f"[WARN] Комірку {slot} відкрито, але ліків на цей день немає (uid={uid})")
             await c.execute(
-                "UPDATE pills SET remaining_count = GREATEST(0, remaining_count - 1) WHERE id=$1",
-                pill["id"],
+                "INSERT INTO logs(user_id, pill_id, slot, event) VALUES($1, NULL, $2, $3)",
+                uid, slot, event
             )
-            remaining = await c.fetchval(
-                "SELECT remaining_count FROM pills WHERE id=$1", pill["id"]
-            )
+            await c.execute("UPDATE users SET last_ping = NOW(), esp_notified = FALSE WHERE telegram_id=$1", uid)
+            return {"status": "no_pills_for_this_day", "slot": slot}
 
-    pill_name = xor_decrypt(pill["name"], API_SECRET) if pill else f"Комірка {slot}"
+        # 4. Обробка подій та залишків
+        pill_names = []
+        low_stock_warnings = []
+        empty_stock_warnings = []
 
-    try:
-        if event == "open":
-            await bot.send_message(
-                uid,
-                f"💊 Час прийняти <b>{pill_name}</b>!\n🕐 {time_str}",
-                parse_mode="HTML",
-            )
-
-        elif event == "taken":
-            await notify_relatives(
-                uid, f"✅ Пацієнт прийняв <b>{pill_name}</b> о {time_str}", "viewer"
+        for p in current_day_pills:
+            name = xor_decrypt(p["name"], API_SECRET)
+            pill_names.append(name)
+            
+            await c.execute(
+                "INSERT INTO logs(user_id, pill_id, slot, event) VALUES($1,$2,$3,$4)",
+                uid, p["id"], slot, event,
             )
             
-            if remaining is not None:
-                if remaining > 0:
-                    await bot.send_message(
-                        uid,
-                        f"✅ <b>{pill_name}</b> прийнято о {time_str}\n"
-                        f"📥 <b>Комірка {slot} тепер порожня!</b> Покладіть туди 1 таблетку з упаковки.\n"
-                        f"📦 Залишок в упаковці: {remaining} шт.",
-                        parse_mode="HTML",
-                    )
-                    
-                    if remaining <= 3:
-                        await bot.send_message(
-                            uid,
-                            f"⚠️ <b>Залишилось мало ліків в упаковці!</b>\n"
-                            f"Натисніть 🏪 Аптека поруч щоб знайти де купити.",
-                            parse_mode="HTML",
-                        )
-                else:
-                    await bot.send_message(
-                        uid,
-                        f"✅ <b>{pill_name}</b> прийнято о {time_str}\n"
-                        f"🚨 <b>Упаковка повністю порожня!</b> Комірка {slot} залишилася без ліків.\n"
-                        f"Натисніть 🏪 Аптека поруч, щоб купити нові ліки.",
-                        parse_mode="HTML",
-                    )
+            if event == "taken":
+                await c.execute(
+                    "UPDATE pills SET remaining_count = GREATEST(0, remaining_count - 1) WHERE id=$1",
+                    p["id"],
+                )
+                remaining = await c.fetchval("SELECT remaining_count FROM pills WHERE id=$1", p["id"])
+                
+                if remaining == 0:
+                    empty_stock_warnings.append(name)
+                elif remaining <= 3:
+                    low_stock_warnings.append(f"{name} ({remaining} шт.)")
+
+        # 5. Оновлюємо ping (ESP жива)
+        await c.execute(
+            "UPDATE users SET last_ping = NOW(), esp_notified = FALSE WHERE telegram_id=$1", uid
+        )
+
+    # 6. Сповіщення в Telegram
+    try:
+        names_str = ", ".join(pill_names) if pill_names else f"Комірка {slot}"
+        
+        if event == "open":
+            await bot.send_message(uid, f"💊 Час прийняти ліки:\n<b>{names_str}</b>\n🕐 {time_str}", parse_mode="HTML")
+            
+        elif event == "taken":
+            await notify_relatives(uid, f"✅ Пацієнт прийняв: <b>{names_str}</b> о {time_str}", "viewer")
+            await bot.send_message(uid, f"✅ <b>{names_str}</b> прийнято о {time_str}", parse_mode="HTML")
+            
+            if empty_stock_warnings:
+                await bot.send_message(uid, f"🚨 <b>Повністю закінчились:</b> {', '.join(empty_stock_warnings)}!\nНатисніть 🏪 Аптека поруч.", parse_mode="HTML")
+            elif low_stock_warnings:
+                await bot.send_message(uid, f"⚠️ <b>Закінчуються:</b> {', '.join(low_stock_warnings)}.", parse_mode="HTML")
 
         elif event == "remind":
-            await bot.send_message(
-                uid,
-                f"⏰ Нагадування: прийміть <b>{pill_name}</b>!",
-                parse_mode="HTML",
-            )
-            await notify_relatives(
-                uid, f"⏰ Пацієнт ще не прийняв <b>{pill_name}</b>!", "admin"
-            )
+            await bot.send_message(uid, f"⏰ Нагадування: прийміть <b>{names_str}</b>!", parse_mode="HTML")
+            await notify_relatives(uid, f"⏰ Пацієнт ще не прийняв <b>{names_str}</b>!", "admin")
 
         elif event == "missed":
-            await bot.send_message(
-                uid,
-                f"❌ <b>{pill_name}</b> — прийом пропущено!",
-                parse_mode="HTML",
-            )
-            await notify_relatives(
-                uid,
-                f"🚨 ТРИВОГА! Пацієнт пропустив прийом <b>{pill_name}</b>!",
-                "viewer",
-            )
+            await bot.send_message(uid, f"❌ <b>{names_str}</b> — прийом пропущено!", parse_mode="HTML")
+            await notify_relatives(uid, f"🚨 ТРИВОГА! Пропущено: <b>{names_str}</b>!", "viewer")
 
     except Exception as e:
         print(f"[Telegram error] {e}")
-
-    # оновлюємо час останнього пінгу 
-    async with pool.acquire() as c:
-        await c.execute(
-            "UPDATE users SET last_ping = NOW(), esp_notified = FALSE WHERE telegram_id=$1",
-            uid,
-        )
 
     return {"status": "ok"}
 

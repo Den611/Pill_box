@@ -2,7 +2,6 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 
-# Завантажуємо змінні з файлу .env
 load_dotenv()
 
 DB_URL = os.getenv("DB_URL")
@@ -20,17 +19,17 @@ def clear_database():
         conn = psycopg2.connect(DB_URL)
         cursor = conn.cursor()
 
-        # Видаляємо таблиці. CASCADE гарантує, що зв'язані дані (наприклад, розклад для ліків) теж видаляться.
         print("🧹 Видалення таблиць...")
-        cursor.execute("DROP TABLE IF EXISTS Schedule CASCADE;")
-        cursor.execute("DROP TABLE IF EXISTS Pills CASCADE;")
-        cursor.execute("DROP TABLE IF EXISTS Relatives CASCADE;")
+        cursor.execute("DROP TABLE IF EXISTS logs CASCADE;")
+        cursor.execute("DROP TABLE IF EXISTS schedule CASCADE;")
+        cursor.execute("DROP TABLE IF EXISTS pills CASCADE;")
+        cursor.execute("DROP TABLE IF EXISTS relatives CASCADE;")
 
         conn.commit()
-        print("✅ Базу даних повністю очищено! Таблиці будуть створені наново при запуску бота.")
+        print("✅ Готово! Таблиці будуть створені наново при запуску бота.")
 
     except Exception as e:
-        print(f"⚠️ Сталася помилка під час очищення бази: {e}")
+        print(f"⚠️ Помилка: {e}")
         if conn:
             conn.rollback()
     finally:
@@ -41,8 +40,8 @@ def clear_database():
 
 
 if __name__ == "__main__":
-    confirm = input("⚠️ ВИ ВПЕВНЕНІ, що хочете видалити ВСІ дані з бази? (y/n): ")
+    confirm = input("⚠️ Видалити ВСІ дані? (y/n): ")
     if confirm.lower() == 'y':
         clear_database()
     else:
-        print("🛑 Очищення скасовано.")
+        print("🛑 Скасовано.")
