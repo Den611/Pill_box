@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import aiohttp
 import asyncpg
 import uvicorn
+from rich import print
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Query as Q

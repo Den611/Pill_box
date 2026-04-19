@@ -1,4 +1,5 @@
 @echo off
+chcp 65001
 title PillBox Server
 cd /d "%~dp0"
 echo ========================================
