@@ -1,4 +1,6 @@
 import asyncio, base64, json, math, os
+import colorama 
+colorama.init()
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 import aiohttp
@@ -115,6 +117,7 @@ async def init_db():
         await c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_ping TIMESTAMPTZ")
         await c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_terms BOOLEAN DEFAULT FALSE")
         await c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS esp_notified BOOLEAN DEFAULT FALSE")
+        await c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS alert_cooldown TIMESTAMPTZ")
 
 async def get_day_times(user_id: int):
     """Повертає словник {день: "час"}, щоб знати, коли комірка вже зайнята."""
@@ -206,6 +209,7 @@ class AddPill(StatesGroup):
     count  = State()
     times  = State()
     days   = State()
+    confirm = State()
 
 
 class EditPill(StatesGroup):
@@ -222,11 +226,32 @@ class LinkDevice(StatesGroup):
 def main_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
+            [KeyboardButton(text="➕ Додати ліки")],  # Винесли як окрему велику кнопку
             [KeyboardButton(text="💊 Мої ліки"),      KeyboardButton(text="📅 Розклад")],
             [KeyboardButton(text="📝 Інструкція на тиждень"), KeyboardButton(text="📊 Статистика")],
             [KeyboardButton(text="📖 Історія"),         KeyboardButton(text="🏪 Аптека поруч")],
             [KeyboardButton(text="👨‍👩‍👧 Родичі"),       KeyboardButton(text="⚙️ Налаштування")],
             [KeyboardButton(text="🔄 Синхронізація"), KeyboardButton(text="🔥 Серія")],
+        ],
+        resize_keyboard=True,
+    )
+
+def dosage_kb():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="500 мг"), KeyboardButton(text="250 мг"), KeyboardButton(text="100 мг"), KeyboardButton(text="50 мг")],
+            [KeyboardButton(text="1 табл."), KeyboardButton(text="2 табл."), KeyboardButton(text="5 мл"), KeyboardButton(text="10 мл")],
+            [KeyboardButton(text="❌ Скасувати")]
+        ],
+        resize_keyboard=True,
+    )
+
+def count_kb():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="10"), KeyboardButton(text="20"), KeyboardButton(text="30")],
+            [KeyboardButton(text="60"), KeyboardButton(text="90"), KeyboardButton(text="100")],
+            [KeyboardButton(text="❌ Скасувати")]
         ],
         resize_keyboard=True,
     )
@@ -387,10 +412,11 @@ async def link_device_done(message: types.Message, state: FSMContext):
     
 #  /add_pill
 
+@dp.message(F.text == "➕ Додати ліки")
 @dp.message(Command("add_pill"))
 async def cmd_add_pill(message: types.Message, state: FSMContext):
     await state.set_state(AddPill.name)
-    await message.answer("💊 Назва ліку (наприклад: Аспірин):", reply_markup=cancel_kb())
+    await message.answer("<b>Крок 1/5</b>\n💊 Введіть назву ліку (наприклад: Аспірин):", parse_mode="HTML", reply_markup=cancel_kb())
 
 
 @dp.message(AddPill.name)
@@ -399,7 +425,7 @@ async def ap_name(message: types.Message, state: FSMContext):
         await state.clear(); return await message.answer("Скасовано.", reply_markup=main_kb())
     await state.update_data(name=message.text.strip())
     await state.set_state(AddPill.dosage)
-    await message.answer("📏 Доза (наприклад: 500 мг або 1 табл.):")
+    await message.answer("<b>Крок 2/5</b>\n📏 Оберіть або введіть дозу вручну:", parse_mode="HTML", reply_markup=dosage_kb())
 
 
 @dp.message(AddPill.dosage)
@@ -408,7 +434,7 @@ async def ap_dosage(message: types.Message, state: FSMContext):
         await state.clear(); return await message.answer("Скасовано.", reply_markup=main_kb())
     await state.update_data(dosage=message.text.strip())
     await state.set_state(AddPill.count)
-    await message.answer("🔢 Кількість таблеток в упаковці:")
+    await message.answer("<b>Крок 3/5</b>\n🔢 Оберіть або введіть кількість таблеток в упаковці:", parse_mode="HTML", reply_markup=count_kb())
 
 
 @dp.message(AddPill.count)
@@ -420,30 +446,78 @@ async def ap_count(message: types.Message, state: FSMContext):
     await state.update_data(count=int(message.text.strip()))
     
     await state.set_state(AddPill.times)
-    await message.answer("⏰ Введіть час прийому (тільки ОДИН час, наприклад: 09:00):")
+    
+    # Отримуємо зайняті дні та час
+    day_times = await get_day_times(message.chat.id)
+    unique_times = sorted(list(set(day_times.values())))
+    
+    text = "<b>Крок 4/5</b>\n⏰ Введіть час прийому (тільки ОДИН час, наприклад: 09:00):"
+    kb = cancel_kb()
+    
+    if unique_times:
+        text += "\n\n<i>💡 У вас вже є зайняті дні. Щоб додати ліки в ці ж дні, оберіть один з існуючих часів:</i>"
+        inline_kb = [[InlineKeyboardButton(text=f"🕒 {t}", callback_data=f"seltime_{t}")] for t in unique_times]
+        kb = InlineKeyboardMarkup(inline_keyboard=inline_kb)
+        
+    await message.answer(text, parse_mode="HTML", reply_markup=kb)
 
 
+# Обробник інлайн-кнопки (коли юзер вибирає існуючий час)
+@dp.callback_query(AddPill.times, F.data.startswith("seltime_"))
+async def ap_time_selected(callback: types.CallbackQuery, state: FSMContext):
+    time_str = callback.data.split("_")[1]
+    
+    # Прибираємо інлайн-кнопки після вибору
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+        
+    await _process_time(state, time_str, callback.from_user.id)
+    await callback.answer()
+
+
+# Обробник тексту (коли юзер вводить час вручну)
 @dp.message(AddPill.times)
-async def ap_times(message: types.Message, state: FSMContext):
+async def ap_times_manual(message: types.Message, state: FSMContext):
     if message.text == "❌ Скасувати":
         await state.clear(); return await message.answer("Скасовано.", reply_markup=main_kb())
     
-    raw_text = message.text.replace(".", ":").strip()
+    time_str = message.text.replace(".", ":").strip()
     try:
-        datetime.strptime(raw_text, "%H:%M")
+        datetime.strptime(time_str, "%H:%M")
     except ValueError:
         return await message.answer("⚠️ Формат має бути HH:MM. Приклад: 09:00")
+        
+    await _process_time(state, time_str, message.chat.id)
+
+
+# Спільна функція для обробки часу (і для кнопок, і для ручного вводу)
+async def _process_time(state: FSMContext, time_str: str, user_id: int):
+    day_times = await get_day_times(user_id)
     
-    # Отримуємо зайняті дні перед генерацією клавіатури
-    day_times = await get_day_times(message.chat.id)
+    # Перевіряємо, чи є взагалі вільні дні для цього часу
+    # (Дні, які не зайняті взагалі, або дні, де ВЖЕ стоїть ТАКИЙ ЖЕ час)
+    free_days = {d for d in range(7) if d not in day_times or day_times[d] == time_str}
     
-    await state.update_data(times=[raw_text], selected_days=[], day_times=day_times)
+    if not free_days:
+        await bot.send_message(
+            user_id,
+            f"⚠️ <b>Усі 7 днів тижня вже зайняті іншим часом!</b>\n\n"
+            f"Оскільки кожна комірка може відкриватись лише раз на день, ви не можете додати новий час <b>{time_str}</b>.\n\n"
+            f"👇 <i>Будь ласка, введіть або оберіть один із вже існуючих часів:</i>",
+            parse_mode="HTML"
+        )
+        return # Залишаємось у стані AddPill.times і чекаємо правильного вводу
+        
+    await state.update_data(times=[time_str], selected_days=[], day_times=day_times)
     await state.set_state(AddPill.days)
     
-    await message.answer(
-        f"📆 Оберіть дні прийому для <b>{raw_text}</b>:\n"
+    await bot.send_message(
+        user_id,
+        f"<b>Крок 5/5</b>\n📆 Оберіть дні прийому для <b>{time_str}</b>:\n"
         f"<i>(Дні, в яких вже встановлено ІНШИЙ час, заблоковані ⛔)</i>", 
-        reply_markup=generate_days_kb(set(), day_times, raw_text),
+        reply_markup=generate_days_kb(set(), day_times, time_str),
         parse_mode="HTML"
     )
 
@@ -455,6 +529,7 @@ async def ap_days_blocked(callback: types.CallbackQuery):
         f"⚠️ У {DAYS_UA[day]} вже є ліки на інший час! В один день може бути лише один час.", 
         show_alert=True
     )
+
 
 # Обробник для доступних кнопок
 @dp.callback_query(AddPill.days, F.data.startswith("dtoggle_"))
@@ -468,9 +543,29 @@ async def ap_days_toggle(callback: types.CallbackQuery, state: FSMContext):
     if action == "done":
         if not selected:
             return await callback.answer("⚠️ Оберіть хоча б один день!", show_alert=True)
-        await callback.message.edit_reply_markup(reply_markup=None)
-        await _save_pill(callback.message, state, list(selected))
-        await callback.answer()
+            
+        await state.update_data(selected_days=list(selected))
+        await state.set_state(AddPill.confirm)
+        
+        days_str = ", ".join(DAYS_UA[d] for d in sorted(selected))
+        
+        # Генеруємо картку підтвердження
+        summary = (
+            "📝 <b>Підтвердження даних</b>\n\n"
+            f"💊 Назва: <b>{data['name']}</b>\n"
+            f"📏 Доза: <b>{data['dosage']}</b>\n"
+            f"📦 Кількість: <b>{data['count']} шт.</b>\n"
+            f"⏰ Час: <b>{current_time}</b>\n"
+            f"📆 Дні: <b>{days_str}</b>\n\n"
+            "Все вірно? Зберігаємо?"
+        )
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Зберегти", callback_data="confirm_save"),
+             InlineKeyboardButton(text="❌ Скасувати", callback_data="confirm_cancel")]
+        ])
+        
+        await callback.message.edit_text(summary, parse_mode="HTML", reply_markup=kb)
         return
         
     if action == "all":
@@ -491,6 +586,24 @@ async def ap_days_toggle(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_reply_markup(
         reply_markup=generate_days_kb(selected, day_times, current_time)
     )
+    await callback.answer()
+
+
+@dp.callback_query(AddPill.confirm, F.data == "confirm_save")
+async def ap_confirm_save(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    selected_days = data.get("selected_days", [])
+    
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await _save_pill(callback.message, state, selected_days)
+    await callback.answer("✅ Успішно збережено!")
+
+
+@dp.callback_query(AddPill.confirm, F.data == "confirm_cancel")
+async def ap_confirm_cancel(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.delete()
+    await callback.message.answer("❌ Додавання ліків скасовано.", reply_markup=main_kb())
     await callback.answer()
 
 
@@ -1078,7 +1191,6 @@ async def cmd_settings(message: types.Message, state: FSMContext):
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🔌 Змінити пристрій", callback_data="change_dev")],
-            [InlineKeyboardButton(text="➕ Додати ліки",       callback_data="go_add")],
         ]
     )
     await message.answer(
@@ -1127,15 +1239,58 @@ async def root():
     return {"message": "💊 Сервер Pill Box успішно працює!"}
 
 
-@app.get("/api/ping") # есп стукає сюди
-async def ping_from_esp(device_id: str = Q(...), secret: str = Q("")):
+@app.get("/api/ping")
+async def ping_from_esp(
+    device_id: str = Q(...), 
+    secret: str = Q(""),
+    temp: float = Q(None),       # Дані з датчика (опціонально)
+    humidity: float = Q(None)    # Дані з датчика (опціонально)
+):
     if secret != API_SECRET:
         raise HTTPException(403, "Forbidden")
+        
     async with pool.acquire() as c:
+        user = await c.fetchrow("SELECT telegram_id, alert_cooldown FROM users WHERE device_id=$1", device_id)
+        if not user:
+            return {"status": "device_not_found"}
+
+        uid = user["telegram_id"]
+        now = datetime.now()
+
+        # Оновлюємо статус ESP
         await c.execute(
             "UPDATE users SET last_ping = NOW(), esp_notified = FALSE WHERE device_id=$1",
             device_id,
         )
+
+        # Перевірка кліматичних умов
+        if temp is not None and humidity is not None:
+            # Налаштування порогів (можна змінити під вимоги)
+            bad_temp = temp < 10 or temp > 30
+            bad_hum = humidity > 70
+
+            if bad_temp or bad_hum:
+                cooldown = user["alert_cooldown"]
+                # Відправляємо не частіше 1 разу на годину (3600 сек)
+                if not cooldown or (now - cooldown).total_seconds() > 3600:
+                    msg = "⚠️ <b>Увага! Порушено умови зберігання ліків!</b>\n\n"
+                    msg += f"🌡 Температура: <b>{temp}°C</b> " + ("(КРИТИЧНО) " if bad_temp else "(В нормі) ") + "\n"
+                    msg += f"💧 Вологість: <b>{humidity}%</b> " + ("(КРИТИЧНО) " if bad_hum else "(В нормі) ")
+
+                    try:
+                        await bot.send_message(uid, msg, parse_mode="HTML")
+                    except Exception:
+                        pass
+
+                    # Надсилаємо сповіщення всім родичам
+                    await notify_relatives(
+                        uid, 
+                        f"🚨 <b>ТРИВОГА:</b> У пацієнта порушено умови зберігання ліків!\nТемпература: {temp}°C, Вологість: {humidity}%", 
+                        "viewer"
+                    )
+
+                    await c.execute("UPDATE users SET alert_cooldown = NOW() WHERE telegram_id=$1", uid)
+
     return {"status": "ok", "time": datetime.now().isoformat()}
 
 
@@ -1447,4 +1602,4 @@ async def check_esp_status(): #раз на 10хв перевіряємо чи в
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    uvicorn.run(app, host="0.0.0.0", port=8080, use_colors=True)
